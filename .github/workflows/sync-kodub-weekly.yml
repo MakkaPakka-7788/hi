@@ -1,0 +1,48 @@
+name: Sync Kodub weekly fallback
+
+on:
+  schedule:
+    # Kodub rotates the weekly track Sundays at 20:00 UTC.
+    - cron: "3 20 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: public-repository-captures-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Test conflict-safe publishing
+        run: node --test tools/push-public-capture.test.mjs
+      - name: Check Extra catalog, registry, and pins
+        # Local consistency check; fail before fetching or writing public captures.
+        run: node tools/extra-verification-check.mjs
+      - name: Capture current weekly track
+        run: node tools/sync-kodub-weekly.mjs
+      - name: Commit changed capture
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if git diff --quiet -- events/kodub; then
+            echo "Kodub weekly fallback is current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add events/kodub
+          git commit -m "Sync Kodub weekly fallback"
+          node tools/push-public-capture.mjs

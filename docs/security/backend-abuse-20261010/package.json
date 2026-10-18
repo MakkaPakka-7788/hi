@@ -1,0 +1,13 @@
+{
+  "name": "polytrack-scoped-rules-audit-20261010",
+  "private": true,
+  "scripts": {
+    "test:structure": "node --test rules.structure.test.cjs",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-polytrack-abuse --config firebase.json \"node --test rules.emulator.test.cjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "6.0.0",
+    "firebase": "13.0.0",
+    "firebase-tools": "15.33.0"
+  }
+}

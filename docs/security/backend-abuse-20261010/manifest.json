@@ -1,0 +1,18 @@
+{
+  "sourceSha256": "8132ee98e5b79abbf3754693cc3c5688fd7789db1dbebf526c4179e072c4abec",
+  "candidateSha256": "d272b5fe0d8b99853229f353dc2a0d35fe148cf9314bf48da866649d0751349b",
+  "changes": [
+    "freeze legacy caches",
+    "route socket argument",
+    "route lifetime",
+    "host to guest socket",
+    "guest to host socket",
+    "route call",
+    "payload session binding",
+    "session ID bound",
+    "invite update schema and lifetime",
+    "daily helpers",
+    "daily clock and transitions"
+  ],
+  "deployed": false
+}

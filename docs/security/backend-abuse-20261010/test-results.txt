@@ -1,0 +1,73 @@
++  firestore: Firestore Emulator was started in standard edition.
++  firestore: Firestore Emulator UI websocket is running on 9150.
+  ✔ legacy overall overwrite (675.0147ms)
+  ✔ legacy track arbitrary entry (143.5688ms)
+  ✔ current school snapshots stay public and client read-only (532.5499ms)
+  ✔ valid multiplayer invite, join, messages and cleanup (258.379ms)
+  ✔ expired invite update (87.9336ms)
+  ✔ unbounded invite key update (66.012ms)
+  ✔ invite socket retargeting (71.7343ms)
+  ✔ wrong invite field type (65.7417ms)
+  ✔ bounded invite refresh remains valid (93.1982ms)
+  ✔ expired session cannot send fresh messages (146.7134ms)
+  ✔ destination socket must belong to session (142.6954ms)
+  ✔ payload cannot refer to another session (93.0234ms)
+  ✔ session document ID limited to relay-compatible length (120.3889ms)
+  ✔ unrelated caller cannot inject into session (94.0761ms)
+  ✔ RESIDUAL: large nested payload and repeated IDs are still admitted (110.219ms)
+  ✔ daily initial incomplete milestone (38.6282ms)
+  ✔ instant 10000-day public streak (33.9065ms)
+  ✔ arbitrary ten-character activity day (37.0118ms)
+  ✔ stale write clock (35.7747ms)
+  ✔ first daily completion and unchanged completed streak (69.004ms)
+  ✔ repeat same-day streak increment (61.1537ms)
+  ✔ consecutive day completion increments once (56.9182ms)
+  ✔ missed-day completion resets current, retains best (68.6435ms)
+  ✔ existing client milestone jump already fails both rulesets (61.241ms)
+  ✔ direct event create still works without Worker (108.3678ms)
+  ✔ event improvement after five seconds remains admissible (121.8815ms)
+  ✔ event cooldown, equal-time and spoofed-owner writes fail (158.4338ms)
+  ✔ direct profile plus canonical PB batch still works (42.8501ms)
+✔ production-supplied: actual Firestore rule decisions (5835.6622ms)
+  ✔ legacy overall overwrite (83.0436ms)
+  ✔ legacy track arbitrary entry (53.7496ms)
+  ✔ current school snapshots stay public and client read-only (457.9135ms)
+  ✔ valid multiplayer invite, join, messages and cleanup (209.699ms)
+  ✔ expired invite update (58.8938ms)
+  ✔ unbounded invite key update (71.4379ms)
+  ✔ invite socket retargeting (66.1567ms)
+  ✔ wrong invite field type (63.2959ms)
+  ✔ bounded invite refresh remains valid (72.3174ms)
+  ✔ expired session cannot send fresh messages (93.0551ms)
+  ✔ destination socket must belong to session (110.846ms)
+  ✔ payload cannot refer to another session (134.4368ms)
+  ✔ session document ID limited to relay-compatible length (91.6056ms)
+  ✔ unrelated caller cannot inject into session (86.4705ms)
+  ✔ RESIDUAL: large nested payload and repeated IDs are still admitted (194.4979ms)
+  ✔ daily initial incomplete milestone (69.8671ms)
+  ✔ instant 10000-day public streak (32.824ms)
+  ✔ arbitrary ten-character activity day (42.1352ms)
+  ✔ stale write clock (30.4725ms)
+  ✔ first daily completion and unchanged completed streak (83.4806ms)
+  ✔ repeat same-day streak increment (69.7911ms)
+  ✔ consecutive day completion increments once (118.1118ms)
+  ✔ missed-day completion resets current, retains best (50.7337ms)
+  ✔ existing client milestone jump already fails both rulesets (66.8354ms)
+  ✔ direct event create still works without Worker (75.3236ms)
+  ✔ event improvement after five seconds remains admissible (106.1609ms)
+  ✔ event cooldown, equal-time and spoofed-owner writes fail (177.4013ms)
+  ✔ direct profile plus canonical PB batch still works (43.1682ms)
+✔ candidate: actual Firestore rule decisions (3366.2161ms)
+ℹ tests 58
+ℹ suites 0
+ℹ pass 58
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9834.1125
++  Script exited successfully (code 0)
+Worker status-cache: 3 existing tests passed.
+Local no-network status repro: concurrent denied/allowed callers both returned 429; allowed caller alone returned 200.
+Structure checks: see independent run.
+Structure checks: 2 passed, 0 failed. Collection inventory unchanged; only six scoped match blocks differ.

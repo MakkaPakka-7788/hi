@@ -1,0 +1,1248 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function text(value, min, max) {
+      return value is string
+        && value.size() >= min
+        && value.size() <= max;
+    }
+
+    function number(value, min, max) {
+      return value is number
+        && value >= min
+        && value <= max;
+    }
+
+    function moderator() {
+      return signedIn() && (
+        request.auth.token.get('moderator', false) == true
+        || (
+          exists(
+            /databases/$(database)/documents/0.6.2_moderators/$(request.auth.uid)
+          )
+          && get(
+            /databases/$(database)/documents/0.6.2_moderators/$(request.auth.uid)
+          ).data.active == true
+        )
+      );
+    }
+
+    function adminAuthorized() {
+      let sessionPath =
+        /databases/$(database)/documents/0.6.2_admin_sessions/$(request.auth.uid);
+
+      let codePath =
+        /databases/$(database)/documents/0.6.2_admin_code/current;
+
+      return moderator()
+        && exists(sessionPath)
+        && exists(codePath)
+        && get(sessionPath).data.uid == request.auth.uid
+        && get(sessionPath).data.expiresAt > request.time.toMillis()
+        && get(sessionPath).data.code == get(codePath).data.code;
+    }
+
+    function validSessionRoute(sessionId, senderUid, targetUid) {
+      let sessionPath =
+        /databases/$(database)/documents/0.6.2_multiplayer_sessions/$(sessionId);
+
+      return exists(sessionPath) && (
+        (
+          get(sessionPath).data.hostUid == senderUid
+          && get(sessionPath).data.joinUid == targetUid
+        )
+        || (
+          get(sessionPath).data.joinUid == senderUid
+          && get(sessionPath).data.hostUid == targetUid
+        )
+      );
+    }
+
+    function validProfileCosmetics(cosmetics) {
+      let keys = cosmetics.keys();
+      return cosmetics is map
+        && keys.hasAll(['version', 'theme', 'stage', 'stripe', 'badge'])
+        && keys.hasOnly([
+          'version', 'theme', 'accent', 'finish', 'plate', 'edge',
+          'stage', 'stageTint', 'stageEffect', 'stripe', 'emblem',
+          'emblem2', 'emblem3', 'emblemBackdrop', 'nameFont',
+          'nameSize', 'nameWeight', 'nameColor', 'baseSecondary',
+          'title', 'badge', 'favoriteTrackId', 'overridePodium'
+        ])
+        && cosmetics.version in [1, 2, 3, 4, 5, 6, 7]
+        && text(cosmetics.theme, 1, 32)
+        && text(cosmetics.stage, 1, 32)
+        && text(cosmetics.stripe, 1, 32)
+        && text(cosmetics.badge, 1, 32)
+        && (!('favoriteTrackId' in cosmetics)
+          || cosmetics.favoriteTrackId == ''
+          || text(cosmetics.favoriteTrackId, 8, 80))
+        && (!('overridePodium' in cosmetics)
+          || cosmetics.overridePodium is bool);
+    }
+    function entitledCosmetics(c, accountId) {
+      let path=/databases/$(database)/documents/0.6.2_s1_cosmetic_entitlements/$(accountId);
+      let allowed=exists(path)?get(path).data:{"theme":["classic","cyan"],"accent":["cyan","white"],"finish":["gradient","solid"],"plate":["block","outline"],"edge":["accent","none"],"stage":["garage","slate"],"stageTint":["natural","blue"],"stripe":["standard","cyan"],"emblem":["none","bolt"],"title":["auto"],"badge":["auto","none"]};
+      return (!('theme' in c) || c.theme in allowed.theme)
+        && (!('accent' in c) || c.accent in allowed.accent)
+        && (!('finish' in c) || c.finish in allowed.finish)
+        && (!('plate' in c) || c.plate in allowed.plate)
+        && (!('edge' in c) || c.edge in allowed.edge)
+        && (!('stage' in c) || c.stage in allowed.stage)
+        && (!('stageTint' in c) || c.stageTint in allowed.stageTint)
+        && (!('stageEffect' in c) || c.stageEffect in allowed.get('stageEffect', ['none']))
+        && (!('stripe' in c) || c.stripe in allowed.stripe)
+        && (!('emblem' in c) || c.emblem in allowed.emblem)
+        && (!('emblem2' in c) || c.emblem2 in allowed.get('emblem2', ['none']))
+        && (!('emblem3' in c) || c.emblem3 in allowed.get('emblem3', ['none']))
+        && (!('emblemBackdrop' in c) || c.emblemBackdrop in allowed.get('emblemBackdrop', ['none']))
+        && (!('nameFont' in c) || c.nameFont in allowed.get('nameFont', ['classic']))
+        && (!('nameSize' in c) || c.nameSize in allowed.get('nameSize', ['normal']))
+        && (!('nameWeight' in c) || c.nameWeight in allowed.get('nameWeight', ['regular']))
+        && (!('nameColor' in c) || c.nameColor in allowed.get('nameColor', ['default']))
+        && (!('baseSecondary' in c) || c.baseSecondary in allowed.get('baseSecondary', ['auto']))
+        && (!('title' in c) || c.title in allowed.title)
+        && (!('badge' in c) || c.badge in allowed.badge);
+    }
+
+    function validPublicProfile(data, accountId) {
+      let keys = data.keys();
+      return keys.hasAll([
+          'accountId',
+          'ownerUid',
+          'name',
+          'nickname',
+          'carStyle',
+          'isVerifier',
+          'updatedAt'
+        ])
+        && keys.hasOnly([
+          'accountId',
+          'ownerUid',
+          'name',
+          'nickname',
+          'countryCode',
+          'carStyle',
+          'pbCount',
+          'totalPlaytimeMs',
+          'accountCreatedAt',
+          'latestPbAt',
+          'profileCosmetics',
+          'cosmeticsUpdatedAt', 'cosmeticsSyncedAt',
+          'isVerifier',
+          'updatedAt'
+        ])
+        && data.accountId == accountId
+        && text(data.accountId, 1, 128)
+        && text(data.ownerUid, 1, 128)
+        && text(data.name, 1, 24)
+        && text(data.nickname, 1, 24)
+        && (
+          !('countryCode' in data)
+          || data.countryCode == null
+          || text(data.countryCode, 0, 8)
+        )
+        && text(data.carStyle, 1, 256)
+        && (
+          !('pbCount' in data)
+          || number(data.pbCount, 0, 1000000)
+        )
+        && (
+          !('totalPlaytimeMs' in data)
+          || number(data.totalPlaytimeMs, 0, 315576000000)
+        )
+        && (
+          !('accountCreatedAt' in data)
+          || number(data.accountCreatedAt, 1704067200000, 4102444800000)
+        )
+        && (
+          !('latestPbAt' in data)
+          || number(data.latestPbAt, 1704067200000, 4102444800000)
+        )
+        && (
+          !('profileCosmetics' in data)
+          || validProfileCosmetics(data.profileCosmetics)
+        )
+        && data.isVerifier == false
+        && data.updatedAt is number;
+    }
+
+    function validRaceResult(data, resultId) {
+      return data.keys().hasAll([
+          'accountId',
+          'ownerUid',
+          'trackId',
+          'name',
+          'nickname',
+          'timeMs',
+          'replay',
+          'replayHash',
+          'carStyle',
+          'pbCount',
+          'raceTimeFrames',
+          'frames',
+          'uploadId',
+          'verified',
+          'verifiedState',
+          'createdAt',
+          'updatedAt',
+          'source'
+        ])
+        && data.keys().hasOnly([
+          'accountId',
+          'ownerUid',
+          'trackId',
+          'name',
+          'nickname',
+          'countryCode',
+          'timeMs',
+          'replay',
+          'replayHash',
+          'carStyle',
+          'carColors',
+          'carId',
+          'pbCount',
+          'totalPlaytimeMs',
+          'raceTimeFrames',
+          'frames',
+          'uploadId',
+          'verified',
+          'verifiedState',
+          'createdAt',
+          'pbAt',
+          'accountCreatedAt',
+          'updatedAt',
+          'ingestedAt',
+          'source'
+        ])
+        && resultId == data.accountId + '_' + data.trackId
+        && text(data.accountId, 1, 128)
+        && text(data.ownerUid, 1, 128)
+        && text(data.trackId, 1, 80)
+        && text(data.name, 1, 24)
+        && text(data.nickname, 1, 24)
+        && (
+          !('countryCode' in data)
+          || data.countryCode == null
+          || text(data.countryCode, 0, 8)
+        )
+        && number(data.timeMs, 1, 36000000)
+        && text(data.replay, 1, 850000)
+        && text(data.replayHash, 1, 128)
+        && text(data.carStyle, 1, 256)
+        && (
+          !('carColors' in data)
+          || data.carColors == null
+          || text(data.carColors, 1, 64)
+        )
+        && (
+          !('carId' in data)
+          || data.carId == null
+          || text(data.carId, 1, 64)
+        )
+        && (
+          !('pbCount' in data)
+          || number(data.pbCount, 0, 1000000)
+        )
+        && (
+          !('totalPlaytimeMs' in data)
+          || number(data.totalPlaytimeMs, 0, 315576000000)
+        )
+        && number(data.raceTimeFrames, 1, 4000000)
+        && number(data.frames, 1, 4000000)
+        && data.raceTimeFrames == data.frames
+        && number(data.uploadId, 1, 9007199254740991)
+        && data.verified is bool
+        && number(data.verifiedState, 0, 10)
+        && data.createdAt is number
+        && (!('pbAt' in data) || data.pbAt == data.createdAt)
+        && (
+          !('accountCreatedAt' in data)
+          || number(data.accountCreatedAt, 1704067200000, data.createdAt)
+        )
+        && data.updatedAt is number
+        && (!('ingestedAt' in data) || data.ingestedAt is timestamp)
+        && text(data.source, 1, 500);
+    }
+
+    /*
+     * Moderator allowlist
+     */
+
+    match /0.6.2_moderators/{uid} {
+      allow get: if signedIn() && uid == request.auth.uid;
+      allow list, create, update, delete: if false;
+    }
+
+    /*
+     * Exact game-rendered car previews. These are read only when a moderator
+     * opens one driver, so directory queries never download every PNG.
+     */
+
+    match /0.6.2_car_previews/{accountId} {
+      allow get: if adminAuthorized();
+      allow list: if false;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'accountId',
+          'ownerUid',
+          'carStyle',
+          'image',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'accountId',
+          'ownerUid',
+          'carStyle',
+          'image',
+          'updatedAt'
+        ])
+        && request.resource.data.accountId == accountId
+        && request.resource.data.ownerUid == request.auth.uid
+        && text(request.resource.data.carStyle, 1, 256)
+        && text(request.resource.data.image, 100, 180000)
+        && request.resource.data.image.matches('^data:image/png;base64,[A-Za-z0-9+/=]+$')
+        && request.resource.data.updatedAt is number;
+
+      allow update: if signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.accountId == resource.data.accountId
+        && request.resource.data.accountId == accountId
+        && request.resource.data.keys().hasOnly([
+          'accountId',
+          'ownerUid',
+          'carStyle',
+          'image',
+          'updatedAt'
+        ])
+        && text(request.resource.data.carStyle, 1, 256)
+        && text(request.resource.data.image, 100, 180000)
+        && request.resource.data.image.matches('^data:image/png;base64,[A-Za-z0-9+/=]+$')
+        && request.resource.data.updatedAt is number;
+
+      allow delete: if false;
+    }
+
+    /*
+     * Personal-best race records
+     */
+
+    function validRaceUpdate(resultId) {
+      let data = request.resource.data;
+      let old = resource.data;
+      let changed = data.diff(old).affectedKeys();
+      return ((
+        signedIn()
+        && old.ownerUid == request.auth.uid
+        && data.ownerUid == request.auth.uid
+        && data.accountId == old.accountId
+        && data.trackId == old.trackId
+        && data.timeMs == old.timeMs
+        && data.frames == old.frames
+        && data.raceTimeFrames
+          == old.raceTimeFrames
+        && data.uploadId == old.uploadId
+        && data.createdAt == old.createdAt
+        && (
+          !('pbAt' in old)
+          || data.pbAt == old.pbAt
+        )
+        && (
+          !('accountCreatedAt' in old)
+          || data.accountCreatedAt == old.accountCreatedAt
+        )
+        && (
+          old.verified != true
+          || (
+            data.replay == old.replay
+            && data.replayHash == old.replayHash
+          )
+        )
+        && data.verified == old.verified
+        && data.verifiedState
+          == old.verifiedState
+        && changed
+          .hasOnly([
+            'replay',
+            'replayHash',
+            'carStyle',
+            'carColors',
+            'carId',
+            'updatedAt'
+          ])
+
+      ) || (
+        signedIn()
+        && old.ownerUid == request.auth.uid
+        && data.ownerUid == request.auth.uid
+        && data.accountId == old.accountId
+        && data.trackId == old.trackId
+        && data.timeMs < old.timeMs
+        && data.ingestedAt == request.time
+        && data.createdAt >= old.createdAt
+        && data.verified == false
+        && data.verifiedState == 0
+        && (
+          !('totalPlaytimeMs' in old)
+          || data.totalPlaytimeMs >= old.totalPlaytimeMs
+        )
+        && data.pbCount == getAfter(
+          /databases/$(database)/documents/0.6.2_profiles_public/$(data.accountId)
+        ).data.pbCount
+
+      ) || (
+        adminAuthorized()
+        && data.ownerUid == old.ownerUid
+        && data.accountId == old.accountId
+        && data.trackId == old.trackId
+        && changed
+          .hasOnly([
+            'name',
+            'nickname',
+            'updatedAt'
+          ])
+
+      )) ? validRaceResult(data, resultId) : false;
+    }
+
+    match /0.6.2_race_results/{resultId} {
+      allow read: if true;
+
+      allow create: if signedIn()
+        && request.resource.data.ingestedAt == request.time
+        && request.resource.data.verified == false
+        && request.resource.data.verifiedState == 0
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.pbCount == getAfter(
+          /databases/$(database)/documents/0.6.2_profiles_public/$(request.resource.data.accountId)
+        ).data.pbCount
+        && validRaceResult(request.resource.data, resultId);
+
+      allow update: if validRaceUpdate(resultId);
+
+      allow delete: if false;
+    }
+
+    /*
+     * Public racer profiles
+     */
+
+    function validProfileOwnerUpdate(accountId) {
+      let data = request.resource.data;
+      let old = resource.data;
+      let changed = data.diff(old).affectedKeys();
+      return signedIn()
+        && old.ownerUid == request.auth.uid
+        && data.ownerUid == request.auth.uid
+        && data.accountId == old.accountId
+        && changed
+          .hasOnly([
+            'name',
+            'nickname',
+            'countryCode',
+            'carStyle',
+            'pbCount',
+            'totalPlaytimeMs',
+            'accountCreatedAt',
+            'latestPbAt',
+            'profileCosmetics',
+            'cosmeticsUpdatedAt', 'cosmeticsSyncedAt',
+            'updatedAt'
+          ])
+        && (
+          !changed.hasAny(['pbCount'])
+          || (
+            !('pbCount' in old)
+            && number(data.pbCount, 1, 79)
+          )
+          || data.pbCount == old.pbCount + 1
+        )
+        && (
+          !changed.hasAny(['totalPlaytimeMs'])
+          || (
+            number(data.totalPlaytimeMs, 0, 315576000000)
+            && (
+              !('totalPlaytimeMs' in old)
+              || data.totalPlaytimeMs >= old.totalPlaytimeMs
+            )
+          )
+        )
+        && (
+          !changed.hasAny(['accountCreatedAt'])
+          || (
+            !('accountCreatedAt' in old)
+            && data.accountCreatedAt <= request.time.toMillis()
+          )
+          || data.accountCreatedAt == old.accountCreatedAt
+        )
+        && (
+          !changed.hasAny(['latestPbAt'])
+          || (
+            data.latestPbAt <= request.time.toMillis() + 300000
+            && (
+              !('latestPbAt' in old)
+              || data.latestPbAt >= old.latestPbAt
+            )
+          )
+        )
+        && (
+          !changed.hasAny(['cosmeticsUpdatedAt'])
+          || (
+            data.cosmeticsUpdatedAt is number
+            && data.cosmeticsUpdatedAt <= request.time.toMillis() + 300000
+            && data.cosmeticsUpdatedAt >= request.time.toMillis() - 300000
+          )
+        )
+        && (!changed.hasAny(['profileCosmetics','cosmeticsSyncedAt']) || (data.cosmeticsSyncedAt == request.time && entitledCosmetics(data.profileCosmetics,accountId)));
+    }
+
+    match /0.6.2_profiles_public/{accountId} {
+      allow read: if true;
+
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && (!('pbCount' in request.resource.data) || request.resource.data.pbCount == 1)
+        && ((!('profileCosmetics' in request.resource.data) && !('cosmeticsSyncedAt' in request.resource.data)) || (request.resource.data.cosmeticsSyncedAt == request.time && entitledCosmetics(request.resource.data.profileCosmetics, accountId)))
+        && validPublicProfile(request.resource.data, accountId);
+
+      allow update: if (validProfileOwnerUpdate(accountId) || (
+        adminAuthorized()
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.accountId == resource.data.accountId
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'name',
+            'nickname',
+            'updatedAt'
+          ])
+
+      ))
+        ? validPublicProfile(request.resource.data, accountId) : false;
+
+      allow delete: if false;
+    }
+
+    /*
+     * School-safe cosmetic queue. Players may enqueue only their own fixed,
+     * whitelisted cosmetic payload. The Worker validates unlocks before
+     * copying the look into public Ranked snapshots.
+     */
+    match /0.6.2_s1_cosmetic_jobs/{accountId} {
+      allow read: if signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && resource.data.accountId == accountId;
+
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'accountId', 'ownerUid', 'cosmetics', 'active', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'accountId', 'ownerUid', 'cosmetics', 'active', 'updatedAt'
+        ])
+        && request.resource.data.accountId == accountId
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.active == true
+        && request.resource.data.updatedAt is number
+        && request.resource.data.updatedAt <= request.time.toMillis() + 300000
+        && request.resource.data.updatedAt >= request.time.toMillis() - 300000
+        && validProfileCosmetics(request.resource.data.cosmetics)
+        && (
+          !exists(/databases/$(database)/documents/0.6.2_s1_cosmetic_jobs/$(accountId))
+          || resource.data.ownerUid == request.auth.uid
+        );
+
+      allow delete: if false;
+    }
+
+    /*
+     * Per-track leaderboard caches
+     */
+
+    match /0.6.2_leaderboards_track/{trackId} {
+      allow read: if true;
+
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'trackId',
+          'entries',
+          'updatedAt',
+          'schemaVersion'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'trackId',
+          'entries',
+          'updatedAt',
+          'schemaVersion'
+        ])
+        && request.resource.data.trackId == trackId
+        && request.resource.data.entries is list
+        && request.resource.data.entries.size() <= 500
+        && request.resource.data.schemaVersion == 2
+        && request.resource.data.updatedAt is number
+        && request.resource.data.updatedAt
+          <= request.time.toMillis() + 300000
+        && (
+          !exists(
+            /databases/$(database)/documents/0.6.2_leaderboards_track/$(trackId)
+          )
+          || request.resource.data.entries.size()
+            >= resource.data.entries.size()
+          || adminAuthorized()
+        );
+
+      allow delete: if false;
+    }
+
+    /*
+     * Overall leaderboard snapshot and rebuild lease
+     */
+
+match /0.6.2_leaderboards_overall/{docId} {
+  allow read: if true;
+
+  allow create, update: if signedIn()
+    && docId == 'main'
+    && request.resource.data.keys().hasOnly([
+      'entries',
+      'updatedAt',
+      'seededBy',
+      'revision',
+      'builtRevision',
+      'rebuildLeaseUntil',
+      'rebuildLeaseOwner'
+    ])
+    && request.resource.data.entries is list
+    && request.resource.data.entries.size() <= 200
+    && request.resource.data.updatedAt is number
+    && number(request.resource.data.revision, 0, 9007199254740991)
+    && number(request.resource.data.builtRevision, 0, 9007199254740991)
+    && request.resource.data.builtRevision <= request.resource.data.revision
+    && text(request.resource.data.seededBy, 1, 120)
+    && (
+      !request.resource.data.keys().hasAny([
+        'rebuildLeaseUntil',
+        'rebuildLeaseOwner'
+      ])
+      || (
+        number(
+          request.resource.data.rebuildLeaseUntil,
+          request.time.toMillis(),
+          request.time.toMillis() + 90000
+        )
+        && request.resource.data.rebuildLeaseOwner == request.auth.uid
+      )
+    );
+
+  allow delete: if false;
+}
+
+    /*
+     * Manual name moderation
+     */
+
+    match /0.6.2_moderation_names/{accountId} {
+      allow read: if signedIn();
+
+      allow create, update: if adminAuthorized()
+        && request.resource.data.keys().hasAll([
+          'accountId',
+          'replacement',
+          'active',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'accountId',
+          'replacement',
+          'active',
+          'updatedAt'
+        ])
+        && request.resource.data.accountId == accountId
+        && text(request.resource.data.accountId, 1, 128)
+        && text(request.resource.data.replacement, 1, 24)
+        && request.resource.data.active is bool
+        && request.resource.data.updatedAt is number;
+
+      allow delete: if adminAuthorized();
+    }
+
+    /*
+     * Admin verification
+     */
+
+    match /0.6.2_admin_code/{docId} {
+      allow read: if false;
+
+      allow create, update: if moderator()
+        && docId == 'current'
+        && request.resource.data.keys().hasAll([
+          'code',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'code',
+          'updatedAt'
+        ])
+        && text(request.resource.data.code, 8, 8)
+        && request.resource.data.code.matches('^[0-9]{8}$')
+        && request.resource.data.updatedAt is number;
+
+      allow delete: if false;
+    }
+
+    match /0.6.2_admin_sessions/{uid} {
+      allow read: if moderator()
+        && uid == request.auth.uid;
+
+      allow create, update: if moderator()
+        && uid == request.auth.uid
+        && exists(
+          /databases/$(database)/documents/0.6.2_admin_code/current
+        )
+        && request.resource.data.keys().hasAll([
+          'uid',
+          'code',
+          'createdAt',
+          'expiresAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'code',
+          'createdAt',
+          'expiresAt'
+        ])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.code
+          == get(
+            /databases/$(database)/documents/0.6.2_admin_code/current
+          ).data.code
+        && request.resource.data.createdAt is number
+        && request.resource.data.expiresAt is number
+        && request.resource.data.expiresAt
+          > request.time.toMillis()
+        && request.resource.data.expiresAt
+          <= request.time.toMillis() + 600000;
+
+      allow delete: if moderator()
+        && uid == request.auth.uid;
+    }
+
+    match /0.6.2_admin_audit/{auditId} {
+      allow read: if moderator();
+
+      allow create: if adminAuthorized()
+        && request.resource.data.keys().hasAll([
+          'action',
+          'targetAccountId',
+          'replacement',
+          'reason',
+          'moderatorUid',
+          'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'action',
+          'targetAccountId',
+          'replacement',
+          'reason',
+          'moderatorUid',
+          'createdAt'
+        ])
+        && request.resource.data.action in [
+          'rename',
+          'repair-track',
+          'force-rebuild'
+        ]
+        && text(
+          request.resource.data.targetAccountId,
+          1,
+          128
+        )
+        && text(request.resource.data.replacement, 1, 160)
+        && text(request.resource.data.reason, 1, 200)
+        && request.resource.data.moderatorUid
+          == request.auth.uid
+        && request.resource.data.createdAt is number;
+
+      allow update, delete: if false;
+    }
+
+    /*
+     * Daily goals and streaks
+     */
+
+    match /0.6.2_daily_streaks/{accountId} {
+      allow read: if true;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'accountId',
+          'ownerUid',
+          'name',
+          'currentStreak',
+          'bestStreak',
+          'activityDay',
+          'completedDay',
+          'lastTrackId',
+          'dayRuns',
+          'dayPbs',
+          'bestPbImprovementMs',
+          'bestRunTimeMs',
+          'goalCompleted',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'accountId',
+          'ownerUid',
+          'name',
+          'currentStreak',
+          'bestStreak',
+          'activityDay',
+          'completedDay',
+          'lastTrackId',
+          'dayRuns',
+          'dayPbs',
+          'bestPbImprovementMs',
+          'bestRunTimeMs',
+          'goalCompleted',
+          'updatedAt'
+        ])
+        && request.resource.data.accountId == accountId
+        && request.resource.data.ownerUid == request.auth.uid
+        && text(request.resource.data.accountId, 1, 128)
+        && text(request.resource.data.name, 1, 24)
+        && number(
+          request.resource.data.currentStreak,
+          0,
+          10000
+        )
+        && number(
+          request.resource.data.bestStreak,
+          0,
+          10000
+        )
+        && request.resource.data.bestStreak
+          >= request.resource.data.currentStreak
+        && text(request.resource.data.activityDay, 10, 10)
+        && text(request.resource.data.completedDay, 0, 10)
+        && text(request.resource.data.lastTrackId, 1, 80)
+        && request.resource.data.dayRuns == 1
+        && number(request.resource.data.dayPbs, 0, 1)
+        && number(
+          request.resource.data.bestPbImprovementMs,
+          0,
+          36000000
+        )
+        && number(
+          request.resource.data.bestRunTimeMs,
+          1,
+          36000000
+        )
+        && request.resource.data.goalCompleted is bool
+        && request.resource.data.updatedAt is number;
+
+      allow update: if signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.accountId == resource.data.accountId
+        && request.resource.data.accountId == accountId
+        && request.resource.data.keys().hasAll([
+          'accountId',
+          'ownerUid',
+          'name',
+          'currentStreak',
+          'bestStreak',
+          'activityDay',
+          'completedDay',
+          'lastTrackId',
+          'dayRuns',
+          'dayPbs',
+          'bestPbImprovementMs',
+          'bestRunTimeMs',
+          'goalCompleted',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'accountId',
+          'ownerUid',
+          'name',
+          'currentStreak',
+          'bestStreak',
+          'activityDay',
+          'completedDay',
+          'lastTrackId',
+          'dayRuns',
+          'dayPbs',
+          'bestPbImprovementMs',
+          'bestRunTimeMs',
+          'goalCompleted',
+          'updatedAt'
+        ])
+        && text(request.resource.data.name, 1, 24)
+        && number(
+          request.resource.data.currentStreak,
+          0,
+          10000
+        )
+        && (
+          request.resource.data.currentStreak == 1
+          || request.resource.data.currentStreak
+            == resource.data.currentStreak
+          || request.resource.data.currentStreak
+            == resource.data.currentStreak + 1
+        )
+        && request.resource.data.bestStreak
+          >= resource.data.bestStreak
+        && request.resource.data.bestStreak
+          <= resource.data.bestStreak + 1
+        && request.resource.data.bestStreak
+          >= request.resource.data.currentStreak
+        && text(request.resource.data.activityDay, 10, 10)
+        && text(request.resource.data.completedDay, 0, 10)
+        && text(request.resource.data.lastTrackId, 1, 80)
+        && number(request.resource.data.dayRuns, 1, 10000)
+        && number(request.resource.data.dayPbs, 0, 10000)
+        && request.resource.data.dayPbs
+          <= request.resource.data.dayRuns
+        && number(
+          request.resource.data.bestPbImprovementMs,
+          0,
+          36000000
+        )
+        && number(
+          request.resource.data.bestRunTimeMs,
+          1,
+          36000000
+        )
+        && request.resource.data.goalCompleted is bool
+        && (
+          request.resource.data.activityDay
+            == resource.data.activityDay
+          && request.resource.data.dayRuns
+            == resource.data.dayRuns + 1
+          && request.resource.data.dayPbs
+            >= resource.data.dayPbs
+          && request.resource.data.dayPbs
+            <= resource.data.dayPbs + 1
+          ||
+          request.resource.data.activityDay
+            != resource.data.activityDay
+          && request.resource.data.dayRuns == 1
+          && request.resource.data.dayPbs <= 1
+        )
+        && request.resource.data.updatedAt is number;
+
+      allow delete: if false;
+    }
+
+    /*
+     * Firebase multiplayer signaling
+     */
+
+    match /0.6.2_multiplayer_invites/{inviteCode} {
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'inviteCode',
+          'hostUid',
+          'hostSocketId',
+          'key',
+          'hostNickname',
+          'createdAt',
+          'expiresAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'inviteCode',
+          'hostUid',
+          'hostSocketId',
+          'key',
+          'hostNickname',
+          'createdAt',
+          'expiresAt'
+        ])
+        && request.resource.data.hostUid == request.auth.uid
+        && request.resource.data.inviteCode == inviteCode
+        && inviteCode.matches(
+          '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$'
+        )
+        && text(request.resource.data.hostSocketId, 1, 128)
+        && text(request.resource.data.key, 0, 1024)
+        && text(request.resource.data.hostNickname, 1, 24)
+        && request.resource.data.createdAt is number
+        && request.resource.data.createdAt
+          <= request.time.toMillis() + 300000
+        && request.resource.data.expiresAt is number
+        && request.resource.data.expiresAt
+          > request.time.toMillis()
+        && request.resource.data.expiresAt
+          <= request.time.toMillis() + 1860000;
+
+      allow update: if signedIn()
+        && resource.data.hostUid == request.auth.uid
+        && request.resource.data.hostUid == resource.data.hostUid
+        && request.resource.data.inviteCode
+          == resource.data.inviteCode
+        && request.resource.data.keys()
+          .hasOnly([
+            'inviteCode',
+            'hostUid',
+            'hostSocketId',
+            'key',
+            'hostNickname',
+            'createdAt',
+            'expiresAt'
+          ]);
+
+      allow delete: if signedIn()
+        && resource.data.hostUid == request.auth.uid;
+    }
+
+    match /0.6.2_multiplayer_sessions/{sessionId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'session',
+          'inviteCode',
+          'hostUid',
+          'hostSocketId',
+          'joinUid',
+          'joinSocketId',
+          'createdAt',
+          'expiresAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'session',
+          'inviteCode',
+          'hostUid',
+          'hostSocketId',
+          'joinUid',
+          'joinSocketId',
+          'createdAt',
+          'expiresAt'
+        ])
+        && request.resource.data.session == sessionId
+        && request.resource.data.joinUid == request.auth.uid
+        && exists(
+          /databases/$(database)/documents/0.6.2_multiplayer_invites/$(request.resource.data.inviteCode)
+        )
+        && get(
+          /databases/$(database)/documents/0.6.2_multiplayer_invites/$(request.resource.data.inviteCode)
+        ).data.hostUid == request.resource.data.hostUid
+        && get(
+          /databases/$(database)/documents/0.6.2_multiplayer_invites/$(request.resource.data.inviteCode)
+        ).data.hostSocketId
+          == request.resource.data.hostSocketId
+        && text(request.resource.data.hostUid, 1, 128)
+        && text(request.resource.data.hostSocketId, 1, 128)
+        && text(request.resource.data.joinUid, 1, 128)
+        && text(request.resource.data.joinSocketId, 1, 128)
+        && request.resource.data.createdAt is number
+        && request.resource.data.createdAt <= request.time.toMillis() + 60000
+        && request.resource.data.createdAt >= request.time.toMillis() - 300000
+        && request.resource.data.expiresAt is number
+        && request.resource.data.expiresAt > request.time.toMillis()
+        && request.resource.data.expiresAt <= request.time.toMillis() + 1860000
+        && request.resource.data.expiresAt > request.resource.data.createdAt
+        && get(
+          /databases/$(database)/documents/0.6.2_multiplayer_invites/$(request.resource.data.inviteCode)
+        ).data.expiresAt > request.time.toMillis();
+
+      allow read: if signedIn()
+        && (
+          resource.data.hostUid == request.auth.uid
+          || resource.data.joinUid == request.auth.uid
+        );
+
+      allow update: if false;
+
+      allow delete: if signedIn()
+        && (
+          resource.data.hostUid == request.auth.uid
+          || resource.data.joinUid == request.auth.uid
+        );
+    }
+
+    match /0.6.2_multiplayer_messages/{messageId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'session',
+          'senderUid',
+          'targetUid',
+          'targetSocketId',
+          'payload',
+          'createdAt',
+          'expiresAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'session',
+          'senderUid',
+          'targetUid',
+          'targetSocketId',
+          'payload',
+          'createdAt',
+          'expiresAt'
+        ])
+        && request.resource.data.senderUid == request.auth.uid
+        && text(request.resource.data.session, 1, 128)
+        && text(request.resource.data.targetUid, 1, 128)
+        && text(request.resource.data.targetSocketId, 1, 128)
+        && validSessionRoute(
+          request.resource.data.session,
+          request.resource.data.senderUid,
+          request.resource.data.targetUid
+        )
+        && request.resource.data.payload is map
+        && request.resource.data.createdAt is number
+        && request.resource.data.createdAt
+          <= request.time.toMillis() + 300000
+        && request.resource.data.expiresAt is number
+        && request.resource.data.expiresAt
+          > request.time.toMillis()
+        && request.resource.data.expiresAt
+          <= request.time.toMillis() + 180000;
+
+      allow read: if signedIn()
+        && resource.data.targetUid == request.auth.uid;
+
+      allow delete: if signedIn()
+        && (
+          resource.data.targetUid == request.auth.uid
+          || resource.data.senderUid == request.auth.uid
+        );
+
+      allow update: if false;
+    }
+
+    /*
+     * Production Ranked snapshots are public read-only fallbacks. Only the
+     * service-account Worker may create or change these documents.
+     */
+
+    match /0.6.2_s1_leaderboards_track/{trackId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /0.6.2_s1_leaderboards_overall/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /0.6.2_s1_badges/{accountId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /0.6.2_s1_release_meta/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Server-only reconciliation cursors and cosmetic allowances.
+    match /0.6.2_s1_worker_jobs/{jobId} {
+      allow read, write: if false;
+    }
+
+    match /0.6.2_s1_cosmetic_entitlements/{accountId} {
+      allow read, write: if false;
+    }
+
+    // Event intake is a receipt-time claim, never proof of when controls were recorded.
+    function validEventInbox(data, inboxId) {
+      let period = get(/databases/$(database)/documents/0.6.2_event_periods/$(data.periodId)).data;
+      let profile = get(/databases/$(database)/documents/0.6.2_profiles_public/$(data.accountId)).data;
+      return data.keys().hasAll([
+          'accountId', 'trackId', 'attemptId', 'timeMs', 'frames',
+          'replay', 'carStyle', 'periodId', 'ownerUid', 'receivedAt'
+        ])
+        && data.keys().hasOnly([
+          'accountId', 'trackId', 'attemptId', 'timeMs', 'frames',
+          'replay', 'carStyle', 'periodId', 'ownerUid', 'receivedAt'
+        ])
+        && data.accountId is string
+        && data.accountId.matches('^[a-f0-9]{64}$')
+        && data.trackId is string
+        && data.trackId.matches('^[a-f0-9]{64}$')
+        && data.periodId is string
+        && data.periodId.matches('^[A-Za-z0-9_-]{1,64}$')
+        && data.attemptId is string
+        && data.attemptId.matches('^[A-Za-z0-9_-]{1,64}$')
+        && inboxId == data.periodId + '_' + data.accountId
+        && data.ownerUid == request.auth.uid
+        && profile.ownerUid == request.auth.uid
+        && profile.accountId == data.accountId
+        && data.timeMs is int && data.timeMs >= 1 && data.timeMs <= 300000
+        && data.frames is int && data.frames == data.timeMs
+        && text(data.replay, 1, 65536)
+        && text(data.carStyle, 0, 256)
+        && data.receivedAt is timestamp
+        && data.receivedAt == request.time
+        && period.enabled == true
+        && period.id == data.periodId
+        && period.trackId == data.trackId
+        && period.startsAt is int && period.endsAt is int
+        && period.startsAt <= request.time.toMillis()
+        && request.time.toMillis() < period.endsAt;
+    }
+
+    match /0.6.2_event_inbox/{inboxId} {
+      allow get: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow list, delete: if false;
+      allow create: if signedIn() && validEventInbox(request.resource.data, inboxId);
+      allow update: if signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.accountId == resource.data.accountId
+        && request.resource.data.periodId == resource.data.periodId
+        && request.resource.data.trackId == resource.data.trackId
+        && request.resource.data.attemptId != resource.data.attemptId
+        && request.resource.data.timeMs < resource.data.timeMs
+        && resource.data.receivedAt is timestamp
+        && request.time >= resource.data.receivedAt + duration.value(5, 's')
+        && validEventInbox(request.resource.data, inboxId);
+    }
+
+    match /0.6.2_event_public/{docId} {
+      allow get: if true;
+      allow list, create, update, delete: if false;
+    }
+
+    // Fixed account suffix allows an owner to read an absent receipt as awaiting intake.
+    function ownsEventReceipt(receiptId) {
+      let accountId = receiptId[receiptId.size() - 64:receiptId.size()];
+      let periodId = receiptId[0:receiptId.size() - 65];
+      let profile = get(/databases/$(database)/documents/0.6.2_profiles_public/$(accountId)).data;
+      return profile.accountId == accountId && profile.ownerUid == request.auth.uid
+        && (!exists(/databases/$(database)/documents/0.6.2_event_receipts/$(receiptId)) || (
+          resource.data.ownerUid == request.auth.uid
+          && resource.data.accountId == accountId && resource.data.periodId == periodId
+          && resource.data.keys().hasOnly([
+            'ownerUid', 'accountId', 'periodId', 'attemptId', 'timeMs',
+            'status', 'reason', 'updatedAt', 'eventImproved', 'canonicalImproved'
+          ])
+        ));
+    }
+
+    match /0.6.2_event_receipts/{receiptId} {
+      allow get: if signedIn()
+        && receiptId.matches('^[A-Za-z0-9_-]{1,64}_[a-f0-9]{64}$')
+        && ownsEventReceipt(receiptId);
+      allow list, create, update, delete: if false;
+    }
+
+    /*
+     * Deny every unlisted collection.
+     */
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

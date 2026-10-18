@@ -1,0 +1,81 @@
+name: Verify PolyTrack runs
+on:
+  # GitHub must wake a runner to query Firestore; normal and event work share the same due gate.
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      catch_up:
+        description: 'Catch up backlog (larger bounded Firebase budget; manual only)'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: polytrack-run-verifier
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: vars.POLYTRACK_VERIFIER_ENABLED == 'true' && github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.catch_up && 25 || 15 }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+          cache: npm
+          cache-dependency-path: tools/verifier/package-lock.json
+      - name: Check Extra catalog and trusted track pins
+        run: node tools/extra-verification-check.mjs
+      - name: Check trusted engine before Firebase reads
+        run: node --input-type=module -e "import {validateEnginePin} from './tools/verifier/run.mjs'; await validateEnginePin();"
+      - name: Check for due verification work
+        id: queue
+        timeout-minutes: 2
+        env:
+          FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
+        run: node tools/verifier/run.mjs --check
+      - name: Install pinned verifier dependencies
+        if: steps.queue.outputs.has_work == 'true'
+        run: npm ci --prefix tools/verifier --ignore-scripts
+      - name: Test verifier safeguards
+        if: steps.queue.outputs.has_work == 'true'
+        run: |
+          npm test --prefix tools/verifier
+          node --test tools/verifier/events.test.mjs workers/ranked/test/events.test.js workers/ranked/test/event-canonical.test.js
+      - name: Cache the pinned Playwright browser
+        if: steps.queue.outputs.has_work == 'true'
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('tools/verifier/package-lock.json') }}
+      - name: Install Chromium and system dependencies
+        if: steps.queue.outputs.has_work == 'true'
+        working-directory: tools/verifier
+        run: npx playwright install --with-deps chromium
+      - name: Allow the pinned browser sandbox on Ubuntu
+        if: steps.queue.outputs.has_work == 'true'
+        working-directory: tools/verifier
+        run: |
+          BROWSER="$(node -e "process.stdout.write(require('playwright').chromium.executablePath())")"
+          test -x "$BROWSER"
+          printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile polytrack-verifier "%s" flags=(unconfined) {\n  userns,\n}\n' "$BROWSER" | sudo tee /etc/apparmor.d/polytrack-verifier >/dev/null
+          sudo apparmor_parser -r /etc/apparmor.d/polytrack-verifier
+          node -e "(async()=>{const {chromium}=require('playwright');const browser=await chromium.launch({executablePath:chromium.executablePath(),chromiumSandbox:true,headless:true});await browser.close();console.log('Sandboxed browser startup passed.')})().catch(error=>{console.error(error);process.exit(1)})"
+      # Scheduled runs keep normal limits. Catch-Up amortizes setup, never overlaps another verifier.
+      - name: Verify queued runs
+        timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.catch_up && 15 || 10 }}
+        if: steps.queue.outputs.has_work == 'true'
+        env:
+          FIREBASE_VERIFIER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_VERIFIER_SERVICE_ACCOUNT }}
+          VERIFIER_CATCH_UP: ${{ github.event_name == 'workflow_dispatch' && inputs.catch_up && 'true' || 'false' }}
+        run: |
+          if [ "$VERIFIER_CATCH_UP" = "true" ]; then
+            node tools/verifier/run.mjs --drain --catch-up
+          else
+            node tools/verifier/run.mjs --drain
+          fi

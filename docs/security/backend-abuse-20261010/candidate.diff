@@ -1,0 +1,218 @@
+diff --git a/docs/security/backend-abuse-20261010/production-supplied.rules b/docs/security/backend-abuse-20261010/candidate.rules
+index 9f77681..2a35554 100644
+--- a/docs/security/backend-abuse-20261010/production-supplied.rules
++++ b/docs/security/backend-abuse-20261010/candidate.rules
+@@ -50 +50 @@ service cloud.firestore {
+-    function validSessionRoute(sessionId, senderUid, targetUid) {
++    function validSessionRoute(sessionId, senderUid, targetUid, targetSocketId) {
+@@ -54 +54,4 @@ service cloud.firestore {
+-      return exists(sessionPath) && (
++      return exists(sessionPath)
++        && get(sessionPath).data.expiresAt is number
++        && get(sessionPath).data.expiresAt > request.time.toMillis()
++        && (
+@@ -57,0 +61 @@ service cloud.firestore {
++          && get(sessionPath).data.joinSocketId == targetSocketId
+@@ -61,0 +66 @@ service cloud.firestore {
++          && get(sessionPath).data.hostSocketId == targetSocketId
+@@ -565,4 +570,2 @@ service cloud.firestore {
+-    /*
+-     * Per-track leaderboard caches
+-     */
+-
++    // Legacy caches are not the current client's school-network fallback.
++    // Preserve reads and service-account migration access, deny client writes.
+@@ -571,31 +574 @@ service cloud.firestore {
+-
+-      allow create, update: if signedIn()
+-        && request.resource.data.keys().hasAll([
+-          'trackId',
+-          'entries',
+-          'updatedAt',
+-          'schemaVersion'
+-        ])
+-        && request.resource.data.keys().hasOnly([
+-          'trackId',
+-          'entries',
+-          'updatedAt',
+-          'schemaVersion'
+-        ])
+-        && request.resource.data.trackId == trackId
+-        && request.resource.data.entries is list
+-        && request.resource.data.entries.size() <= 500
+-        && request.resource.data.schemaVersion == 2
+-        && request.resource.data.updatedAt is number
+-        && request.resource.data.updatedAt
+-          <= request.time.toMillis() + 300000
+-        && (
+-          !exists(
+-            /databases/$(database)/documents/0.6.2_leaderboards_track/$(trackId)
+-          )
+-          || request.resource.data.entries.size()
+-            >= resource.data.entries.size()
+-          || adminAuthorized()
+-        );
+-
+-      allow delete: if false;
++      allow write: if false;
+@@ -604,42 +577,4 @@ service cloud.firestore {
+-    /*
+-     * Overall leaderboard snapshot and rebuild lease
+-     */
+-
+-match /0.6.2_leaderboards_overall/{docId} {
+-  allow read: if true;
+-
+-  allow create, update: if signedIn()
+-    && docId == 'main'
+-    && request.resource.data.keys().hasOnly([
+-      'entries',
+-      'updatedAt',
+-      'seededBy',
+-      'revision',
+-      'builtRevision',
+-      'rebuildLeaseUntil',
+-      'rebuildLeaseOwner'
+-    ])
+-    && request.resource.data.entries is list
+-    && request.resource.data.entries.size() <= 200
+-    && request.resource.data.updatedAt is number
+-    && number(request.resource.data.revision, 0, 9007199254740991)
+-    && number(request.resource.data.builtRevision, 0, 9007199254740991)
+-    && request.resource.data.builtRevision <= request.resource.data.revision
+-    && text(request.resource.data.seededBy, 1, 120)
+-    && (
+-      !request.resource.data.keys().hasAny([
+-        'rebuildLeaseUntil',
+-        'rebuildLeaseOwner'
+-      ])
+-      || (
+-        number(
+-          request.resource.data.rebuildLeaseUntil,
+-          request.time.toMillis(),
+-          request.time.toMillis() + 90000
+-        )
+-        && request.resource.data.rebuildLeaseOwner == request.auth.uid
+-      )
+-    );
+-
+-  allow delete: if false;
+-}
++    match /0.6.2_leaderboards_overall/{docId} {
++      allow read: if true;
++      allow write: if false;
++    }
+@@ -779,0 +715,39 @@ match /0.6.2_leaderboards_overall/{docId} {
++    // UTC day checks allow the existing Date.now() client five minutes of skew.
++    function dayStamp(day) {
++      return timestamp.date(int(day[0:4]), int(day[5:7]), int(day[8:10]));
++    }
++
++    function validDailyClock(data) {
++      return data.activityDay is string
++        && data.activityDay.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
++        && data.updatedAt is int
++        && data.updatedAt >= request.time.toMillis() - 300000
++        && data.updatedAt <= request.time.toMillis() + 300000
++        && dayStamp(data.activityDay) == timestamp.value(data.updatedAt).date()
++        && (data.completedDay == '' || (
++          data.completedDay is string
++          && data.completedDay.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
++          && dayStamp(data.completedDay) <= dayStamp(data.activityDay)
++        ))
++        && data.goalCompleted == (data.completedDay == data.activityDay);
++    }
++
++    function validDailyCreate(data) {
++      return validDailyClock(data)
++        && data.currentStreak == (data.goalCompleted ? 1 : 0)
++        && data.bestStreak == data.currentStreak
++        && data.completedDay == (data.goalCompleted ? data.activityDay : '');
++    }
++
++    function validDailyUpdate(data, old) {
++      let newlyCompleted = data.goalCompleted && old.completedDay != data.activityDay;
++      let consecutive = old.completedDay != ''
++        && dayStamp(old.completedDay) + duration.value(1, 'd') == dayStamp(data.activityDay);
++      return validDailyClock(data)
++        && data.activityDay >= old.activityDay
++        && (newlyCompleted
++          ? data.currentStreak == (consecutive ? old.currentStreak + 1 : 1)
++          : (data.currentStreak == old.currentStreak && data.completedDay == old.completedDay))
++        && data.bestStreak == (data.currentStreak > old.bestStreak ? data.currentStreak : old.bestStreak);
++    }
++
+@@ -783,0 +758 @@ match /0.6.2_leaderboards_overall/{docId} {
++        && validDailyCreate(request.resource.data)
+@@ -850,0 +826 @@ match /0.6.2_leaderboards_overall/{docId} {
++        && validDailyUpdate(request.resource.data, resource.data)
+@@ -948,6 +924,2 @@ match /0.6.2_leaderboards_overall/{docId} {
+-    match /0.6.2_multiplayer_invites/{inviteCode} {
+-      allow get: if signedIn();
+-      allow list: if false;
+-
+-      allow create: if signedIn()
+-        && request.resource.data.keys().hasAll([
++    function validMultiplayerInvite(data, inviteCode) {
++      return data.keys().hasAll([
+@@ -962 +934 @@ match /0.6.2_leaderboards_overall/{docId} {
+-        && request.resource.data.keys().hasOnly([
++        && data.keys().hasOnly([
+@@ -971,2 +943,2 @@ match /0.6.2_leaderboards_overall/{docId} {
+-        && request.resource.data.hostUid == request.auth.uid
+-        && request.resource.data.inviteCode == inviteCode
++        && data.hostUid == request.auth.uid
++        && data.inviteCode == inviteCode
+@@ -976,5 +948,5 @@ match /0.6.2_leaderboards_overall/{docId} {
+-        && text(request.resource.data.hostSocketId, 1, 128)
+-        && text(request.resource.data.key, 0, 1024)
+-        && text(request.resource.data.hostNickname, 1, 24)
+-        && request.resource.data.createdAt is number
+-        && request.resource.data.createdAt
++        && text(data.hostSocketId, 1, 128)
++        && text(data.key, 0, 1024)
++        && text(data.hostNickname, 1, 24)
++        && data.createdAt is number
++        && data.createdAt
+@@ -982,2 +954,2 @@ match /0.6.2_leaderboards_overall/{docId} {
+-        && request.resource.data.expiresAt is number
+-        && request.resource.data.expiresAt
++        && data.expiresAt is number
++        && data.expiresAt
+@@ -985 +957 @@ match /0.6.2_leaderboards_overall/{docId} {
+-        && request.resource.data.expiresAt
++        && data.expiresAt
+@@ -986,0 +959,8 @@ match /0.6.2_leaderboards_overall/{docId} {
++    }
++
++    match /0.6.2_multiplayer_invites/{inviteCode} {
++      allow get: if signedIn();
++      allow list: if false;
++
++      allow create: if signedIn()
++        && validMultiplayerInvite(request.resource.data, inviteCode);
+@@ -991,12 +971,4 @@ match /0.6.2_leaderboards_overall/{docId} {
+-        && request.resource.data.inviteCode
+-          == resource.data.inviteCode
+-        && request.resource.data.keys()
+-          .hasOnly([
+-            'inviteCode',
+-            'hostUid',
+-            'hostSocketId',
+-            'key',
+-            'hostNickname',
+-            'createdAt',
+-            'expiresAt'
+-          ]);
++        && request.resource.data.inviteCode == resource.data.inviteCode
++        && request.resource.data.hostSocketId == resource.data.hostSocketId
++        && request.resource.data.createdAt == resource.data.createdAt
++        && validMultiplayerInvite(request.resource.data, inviteCode);
+@@ -1029,0 +1002 @@ match /0.6.2_leaderboards_overall/{docId} {
++        && text(sessionId, 1, 128)
+@@ -1099 +1072,2 @@ match /0.6.2_leaderboards_overall/{docId} {
+-          request.resource.data.targetUid
++          request.resource.data.targetUid,
++          request.resource.data.targetSocketId
+@@ -1101,0 +1076 @@ match /0.6.2_leaderboards_overall/{docId} {
++        && request.resource.data.payload.session == request.resource.data.session

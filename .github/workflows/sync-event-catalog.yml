@@ -1,0 +1,59 @@
+name: Sync public event catalog fallback
+
+on:
+  schedule:
+    - cron: '30 10 * * *'
+    - cron: '10 20 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: public-repository-captures-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'StaticQuasar931/PolyTrack-0.6.3-Ranked' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Test conflict-safe publishing
+        run: node --test tools/push-public-capture.test.mjs
+      - name: Check Extra catalog, registry, and pins
+        # Local consistency check; fail before fetching or writing public captures.
+        run: node tools/extra-verification-check.mjs
+      - name: Test snapshot integrity and resumable capture
+        # Offline safeguards run before any production reads.
+        run: node --test tools/snapshot-lookup.test.mjs tools/public-snapshot-backup.test.mjs tools/published-snapshot-pages.test.mjs tools/snapshot-package.test.mjs tools/public-snapshot-client.test.mjs tools/track-snapshot-paging.test.mjs tools/update-public-snapshot.test.mjs
+      - name: Capture public event assignments
+        run: node tools/sync-event-catalog.mjs
+      - name: Capture bounded public snapshots
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 10 * * *'
+        # Only changed/missing trusted normal replays are fetched; bounded to 100 documents.
+        run: node tools/update-public-snapshot.mjs --refresh-replays
+      - name: Commit changed assignments
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git add -- events/public-catalog.json
+          if [ -f snapshot-current.json ]; then
+            git add -- index.html snapshot-current.json
+            git add -A -- ':(glob)public-snapshots[0-9]*/**'
+          fi
+          if git diff --cached --quiet; then
+            echo "Public static backups are current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Sync public ranked snapshots"
+          node tools/push-public-capture.mjs
