@@ -26,6 +26,7 @@
   <meta name="twitter:title" content="PolyTrack 0.6.3 · Static Ranked">
   <meta name="twitter:description" content="Explore official, community and Extra Tracks. Chase personal bests and compete in daily and weekly events.">
   <meta name="twitter:image" content="https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/images/cover1920x1080.png">
+
   <link rel="canonical" href="https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/">
   <link rel="icon" type="image/svg+xml" href="./images/icon.svg">
   <link rel="shortcut icon" type="image/svg+xml" href="./images/icon.svg">
@@ -34,6 +35,7 @@
   <link rel="preload" href="./forced_square.woff2" as="font" type="font/woff2" crossorigin="anonymous">
   <link rel="preload" href="./images/logo.svg" as="image" type="image/svg+xml">
   <link rel="preload" href="./images/discord.svg" as="image" type="image/svg+xml">
+
   <link rel="stylesheet" href="./events/events.css?v=142" data-event-css>
   <link rel="stylesheet" href="./home-ui.css?v=142" data-home-ui-css>
   <link rel="modulepreload" href="./events/client.mjs?v=142">
@@ -44,19 +46,23 @@
   <script>
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
+
     const analyticsSafeUrl = value => {
       try {
         const url = new URL(value);
-        if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+        if (url.protocol !== "http:" && url.protocol !== "https:") return "";
         return url.origin + url.pathname;
       } catch {
-        return '';
+        return "";
       }
     };
-    const analyticsPageLocation = analyticsSafeUrl(location.href) || location.origin + location.pathname;
+
+    const analyticsPageLocation =
+      analyticsSafeUrl(location.href) || location.origin + location.pathname;
     const analyticsPageReferrer = analyticsSafeUrl(document.referrer);
-    gtag('js', new Date());
-    gtag('config', 'G-QXB7CHLEDT', {
+
+    gtag("js", new Date());
+    gtag("config", "G-QXB7CHLEDT", {
       cookie_domain: location.hostname,
       page_location: analyticsPageLocation,
       page_referrer: analyticsPageReferrer
@@ -64,13 +70,24 @@
   </script>
 
   <script type="application/ld+json">
-    {"@context":"https://schema.org","@type":"VideoGame","name":"PolyTrack 0.6.3 Community Ranked","url":"https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/","description":"A community PolyTrack edition with saved personal bests, Extra Tracks, daily and weekly events, and customizable leaderboards.","genre":["Racing","Time trial"],"gamePlatform":["Web browser","Windows","Android","iOS"],"creator":{"@type":"Organization","name":"Kodub"},"contributor":{"@type":"Person","name":"StaticQuasar931"},"isAccessibleForFree":true}
+    {
+      "@context":"https://schema.org",
+      "@type":"VideoGame",
+      "name":"PolyTrack 0.6.3 Community Ranked",
+      "url":"https://staticquasar931.github.io/PolyTrack-0.6.3-Ranked/",
+      "description":"A community PolyTrack edition with saved personal bests, Extra Tracks, daily and weekly events, and customizable leaderboards.",
+      "genre":["Racing","Time trial"],
+      "gamePlatform":["Web browser","Windows","Android","iOS"],
+      "creator":{"@type":"Organization","name":"Kodub"},
+      "contributor":{"@type":"Person","name":"StaticQuasar931"},
+      "isAccessibleForFree":true
+    }
   </script>
 
   <style>
     @font-face {
       font-family: ForcedSquare;
-      src: url('./forced_square.woff2') format('woff2');
+      src: url("./forced_square.woff2") format("woff2");
       font-display: swap;
     }
 
@@ -105,6 +122,15 @@
       font-family: Arial, sans-serif;
       font-size: 14px;
       box-shadow: 0 3px 12px #0008;
+      opacity: 1;
+      visibility: visible;
+      transition: opacity .25s ease, visibility .25s ease;
+    }
+
+    #flashaccount-panel.panel-fading {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
     }
 
     #flashaccount-panel button {
@@ -129,8 +155,10 @@
   </style>
 
   <script>
-    window.POLYTRACK_TURN_BROKER_URL = 'https://polytrack-turn-broker.staticquasar931.workers.dev/turn';
-    window.POLYTRACK_RANKED_BROKER_URL = 'https://polytrack-ranked-worker.staticquasar931.workers.dev';
+    window.POLYTRACK_TURN_BROKER_URL =
+      "https://polytrack-turn-broker.staticquasar931.workers.dev/turn";
+    window.POLYTRACK_RANKED_BROKER_URL =
+      "https://polytrack-ranked-worker.staticquasar931.workers.dev";
   </script>
 
   <script defer src="./error_screen.bundle.js"></script>
@@ -152,10 +180,10 @@
   </div>
 
   <script>
-    window.addEventListener('beforeunload', (event) => {
+    window.addEventListener("beforeunload", event => {
       if (!window.__polytrackMultiplayerSessionActive) return;
       event.preventDefault();
-      event.returnValue = '';
+      event.returnValue = "";
     });
   </script>
 
@@ -164,14 +192,34 @@
   </noscript>
 
   <script type="module">
+    const panel = document.getElementById("flashaccount-panel");
     const status = document.getElementById("flashaccount-status");
     const loginButton = document.getElementById("flashaccount-login");
     const logoutButton = document.getElementById("flashaccount-logout");
+
+    let hideTimer;
+    let fadeTimer;
+    let account;
+
+    function showPanel() {
+      panel.classList.remove("panel-fading");
+      clearTimeout(hideTimer);
+      clearTimeout(fadeTimer);
+
+      hideTimer = setTimeout(() => {
+        panel.classList.add("panel-fading");
+      }, 60000);
+
+      fadeTimer = setTimeout(() => {
+        panel.style.display = "none";
+      }, 60260);
+    }
 
     function updateUser(user) {
       if (user) {
         status.textContent = "Signed in as " +
           (user.displayName || user.email || "Google user");
+
         loginButton.hidden = true;
         logoutButton.hidden = false;
       } else {
@@ -181,15 +229,32 @@
       }
     }
 
-    try {
-      await import(
-        "https://makkapakka-7788.github.io/MAKKASENTPAKKING-PoRtfolio/flashaccount.js"
-      );
+    function showConnectionError(error) {
+      console.error("FlashAccount error:", error);
+      status.textContent =
+        "Couldn't connect: " + (error?.message || "Unknown error");
+      loginButton.disabled = true;
+      logoutButton.disabled = true;
+    }
 
-      const account = window.FlashAccount;
+    panel.addEventListener("pointerdown", showPanel);
+    panel.addEventListener("keydown", showPanel);
+
+    window.addEventListener("flashaccount-auth", event => {
+      updateUser(event.detail);
+    });
+
+    showPanel();
+
+    try {
+      account = await import(
+        "https://makkapakka-7788.github.io/makkapakka/flashaccount.js"
+      ).then(() => window.FlashAccount);
 
       if (!account) {
-        throw new Error("FlashAccount did not initialize.");
+        throw new Error(
+          "FlashAccount did not initialize. Check that flashaccount.js exists in the root of your MakkaPakka repository."
+        );
       }
 
       loginButton.addEventListener("click", async () => {
@@ -199,6 +264,7 @@
         try {
           await account.signInWithGoogle();
         } catch (error) {
+          console.error("Google sign-in failed:", error);
           status.textContent = "Sign-in failed: " + error.message;
         } finally {
           loginButton.disabled = false;
@@ -211,50 +277,47 @@
         try {
           await account.signOut();
         } catch (error) {
+          console.error("Google sign-out failed:", error);
           status.textContent = "Sign-out failed: " + error.message;
         } finally {
           logoutButton.disabled = false;
         }
       });
 
-      window.addEventListener("flashaccount-auth", event => {
-        updateUser(event.detail);
-      });
-
       updateUser(account.auth.currentUser);
     } catch (error) {
-      console.error("FlashAccount error:", error);
-      status.textContent = "Couldn't connect. Check the browser console.";
-      loginButton.disabled = true;
-      logoutButton.disabled = true;
+      showConnectionError(error);
     }
   </script>
 
   <script>
-    (function(){
+    (function() {
       let keys = [];
       const target = ["r", "r", "r"];
 
-      window.addEventListener("keydown", function(e){
+      window.addEventListener("keydown", function(event) {
         if (
-          e.defaultPrevented ||
-          e.repeat ||
-          e.ctrlKey ||
-          e.metaKey ||
-          e.altKey ||
-          e.target?.isContentEditable ||
-          e.target?.closest?.('input, textarea, select, [role="textbox"]')
+          event.defaultPrevented ||
+          event.repeat ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.altKey ||
+          event.target?.isContentEditable ||
+          event.target?.closest?.(
+            'input, textarea, select, [role="textbox"]'
+          )
         ) {
           keys = [];
           return;
         }
 
-        keys.push(String(e.key || "").toLowerCase());
+        keys.push(String(event.key || "").toLowerCase());
 
         if (keys.length > 3) keys.shift();
 
         if (keys.join("") === target.join("")) {
-          window.location.href = "https://makkapakka-7788.github.io/makkapakka/flashcard.html";
+          window.location.href =
+            "https://makkapakka-7788.github.io/makkapakka/flashcard.html";
         }
       });
     })();
